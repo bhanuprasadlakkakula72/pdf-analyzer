@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PDF Analyzer — Professional</title>
+
+  <!-- Simple, modern styles (no frameworks) -->
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --muted:#6b7280; --accent:#4f46e5;
+      --radius:14px; --gap:18px; --pad:20px;
+    }
+    html,body{height:100%; margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg,#f8fafc 0%, #eef2ff 100%);}
+    .wrap{max-width:1100px;margin:36px auto;padding:20px;}
+    .card{background:var(--card); border-radius:var(--radius); box-shadow:0 8px 30px rgba(15,23,42,0.06); padding:var(--pad); display:flex; gap:var(--gap);}
+    .left{flex:0 0 360px;}
+    .right{flex:1; display:flex; flex-direction:column; gap:12px;}
+    h1{font-size:20px;margin:0 0 6px 0}
+    .sub{color:var(--muted); font-size:13px}
+    .drop{border:2px dashed #e6e9f8; border-radius:12px; padding:22px; text-align:center; cursor:pointer; transition:all .18s}
+    .drop.hover{border-color:var(--accent); background: linear-gradient(180deg, rgba(79,70,229,0.04), rgba(79,70,229,0.02));}
+    .btn{background:var(--accent); color:white; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600}
+    .btn:disabled{opacity:.5; cursor:default}
+    .small{font-size:13px;color:var(--muted)}
+    .meta{margin-top:12px;font-size:13px;color:#374151}
+    .summaryBox{background:#fbfbff;border-radius:10px;padding:14px; min-height:220px; overflow:auto; white-space:pre-wrap; color:#0f172a}
+    .row{display:flex;gap:10px;align-items:center}
+    .actions{display:flex;gap:8px;margin-top:12px}
+    .pill{background:#f1f5f9;padding:8px 10px;border-radius:999px;font-size:13px;color:#374151}
+    .spinner{width:18px;height:18px;border-radius:50%;border:3px solid rgba(0,0,0,0.08);border-top-color:var(--accent); animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    footer{margin-top:12px;color:var(--muted);font-size:12px}
+    .error{color:#b91c1c;font-size:13px;margin-top:10px}
+    @media (max-width:900px){ .card{flex-direction:column} .left{flex:unset} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div>
+        <h1>PDF Analyzer &amp; Summarizer</h1>
+        <div class="sub">Professional single-file frontend — connects to local backend at <code style="background:#fff;padding:2px 6px;border-radius:6px">127.0.0.1:5000</code></div>
+      </div>
+      <div class="pill">Hackathon-ready</div>
+    </div>
+
+    <div class="card" id="mainCard">
+      <!-- LEFT: upload -->
+      <div class="left">
+        <div id="dropZone" class="drop" tabindex="0">
+          <div style="font-weight:600;margin-bottom:6px">Drag &amp; drop PDF here</div>
+          <div class="small">Or click to select a PDF (selectable text PDFs recommended)</div>
+        </div>
+
+        <input id="fileInput" type="file" accept="application/pdf" style="display:none" />
+
+        <div class="meta">
+          <div id="fileMeta" class="small">No file selected</div>
+
+          <div class="actions">
+            <button id="summBtn" class="btn">Upload & Summarize</button>
+            <button id="resetBtn" style="padding:10px 12px;border-radius:10px;border:1px solid #e6eaf9;background:white;cursor:pointer">Reset</button>
+            <button id="downloadBtn" style="padding:10px 12px;border-radius:10px;border:1px solid #e6eaf9;background:white;cursor:pointer">Download</button>
+            <button id="copyBtn" style="padding:10px 12px;border-radius:10px;border:1px solid #e6eaf9;background:white;cursor:pointer">Copy</button>
+          </div>
+
+          <div id="statusLine" style="margin-top:10px"></div>
+          <div id="errorLine" class="error" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: summary -->
+      <div class="right">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-weight:600">Summary</div>
+          <div class="small" id="chunksInfo"></div>
+        </div>
+
+        <div id="summary" class="summaryBox">No summary yet — upload a PDF to analyze.</div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="small">Tip: For scanned PDFs, enable OCR on backend (Tesseract). Long PDFs are auto-chunked.</div>
+          <div id="loadHint" class="small"></div>
+        </div>
+
+        <footer>Designed for quick demos — change styling or endpoints as needed.</footer>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Configuration
+  const API_URL = "http://127.0.0.1:5000/upload"; // change if backend is elsewhere
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileMeta = document.getElementById('fileMeta');
+  const summBtn = document.getElementById('summBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const copyBtn = document.getElementById('copyBtn');
+  const summaryDiv = document.getElementById('summary');
+  const statusLine = document.getElementById('statusLine');
+  const errorLine = document.getElementById('errorLine');
+  const chunksInfo = document.getElementById('chunksInfo');
+  const loadHint = document.getElementById('loadHint');
+
+  let currentFile = null;
+  let lastSummary = "";
+
+  // UX helpers
+  function setStatus(text, spinner=false){
+    statusLine.innerHTML = spinner ? ('<span class="row"><span class="spinner"></span> &nbsp;'+text+'</span>') : text;
+  }
+  function setError(text){ errorLine.style.display = text ? 'block' : 'none'; errorLine.textContent = text || ''; }
+
+  // Drag & drop
+  dropZone.addEventListener('click', ()=> fileInput.click());
+  dropZone.addEventListener('dragover', (e)=>{ e.preventDefault(); dropZone.classList.add('hover');});
+  dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('hover'));
+  dropZone.addEventListener('drop', (e)=> {
+    e.preventDefault(); dropZone.classList.remove('hover');
+    const f = e.dataTransfer.files[0];
+    handleFileSelected(f);
+  });
+
+  fileInput.addEventListener('change', ()=> handleFileSelected(fileInput.files[0]));
+
+  function handleFileSelected(f){
+    setError('');
+    if(!f){ fileMeta.textContent = 'No file selected'; currentFile = null; return; }
+    if(f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+      setError('Please select a PDF file.');
+      return;
+    }
+    currentFile = f;
+    fileMeta.textContent = `${f.name} • ${(f.size/1024).toFixed(1)} KB`;
+    summaryDiv.textContent = 'Ready to upload. Click "Upload & Summarize".';
+    chunksInfo.textContent = '';
+  }
+
+  // Upload & summarize
+  summBtn.addEventListener('click', async ()=>{
+    setError('');
+    if(!currentFile) return setError('Choose a PDF first.');
+    setStatus('Uploading & summarizing — this can take 10–60s on first run', true);
+    summaryDiv.textContent = '';
+    loadHint.textContent = 'Model loads on first run — be patient.';
+    summBtn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append('pdf', currentFile);
+      const resp = await fetch(API_URL, { method: 'POST', body: fd });
+      if(!resp.ok){
+        const j = await resp.json().catch(()=>null);
+        throw new Error((j && j.error) || ('HTTP '+resp.status));
+      }
+      const data = await resp.json();
+      if(data.error) throw new Error(data.error);
+      lastSummary = data.summary || '(no summary returned)';
+      summaryDiv.textContent = lastSummary;
+      chunksInfo.textContent = data.chunks ? `Chunks: ${data.chunks}` : '';
+      setStatus('Summary generated');
+      loadHint.textContent = '';
+    } catch (err) {
+      setError('Failed: ' + err.message);
+      summaryDiv.textContent = 'No summary (error)';
+    } finally {
+      summBtn.disabled = false;
+    }
+  });
+
+  // Reset
+  resetBtn.addEventListener('click', ()=> {
+    currentFile = null; fileInput.value = ''; fileMeta.textContent = 'No file selected';
+    summaryDiv.textContent = 'No summary yet — upload a PDF to analyze.'; setStatus(''); setError(''); chunksInfo.textContent = '';
+    lastSummary = '';
+  });
+
+  // Download
+  downloadBtn.addEventListener('click', ()=> {
+    if(!lastSummary) return setError('No summary to download.');
+    const blob = new Blob([lastSummary], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (currentFile ? currentFile.name.replace(/\.pdf$/i,'') : 'summary') + '_summary.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // Copy
+  copyBtn.addEventListener('click', async ()=> {
+    if(!lastSummary) return setError('No summary to copy.');
+    await navigator.clipboard.writeText(lastSummary);
+    setStatus('Copied to clipboard');
+    setTimeout(()=> setStatus(''), 1800);
+  });
+
+  // keyboard support
+  dropZone.addEventListener('keydown', (e)=> { if(e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+
+  // initial hint
+  setStatus('Ready');
+  </script>
+</body>
+</html>
+
+
+
+
+
+
