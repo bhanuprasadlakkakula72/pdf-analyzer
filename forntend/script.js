@@ -13,10 +13,11 @@ document.getElementById("uploadBtn").addEventListener("click", async () => {
 
     try {
         // Send file to Flask backend
-        const response = await fetch("http://127.0.0.1:5000/upload", {
-            method: "POST",
-            body: formData
-        });
+        const response = await fetch("https://pdf-analyzer-d4py.onrender.com/upload", {
+  method: "POST",
+  body: formData
+});
+
 
         const result = await response.json();
 
